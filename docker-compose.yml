@@ -1,0 +1,19 @@
+services:
+  noteseer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: noteseer
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persistent volume for SQLite database (karakeep.db)
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/app/data
+    # Allows the container to reach Ollama running on the host machine via host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
