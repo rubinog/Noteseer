@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from '@/components/Navbar';
 import { Sidebar, TagWithCount } from '@/components/Sidebar';
 import { ItemCard } from '@/components/ItemCard';
 import { ReaderModal } from '@/components/ReaderModal';
 import { AddItemModal } from '@/components/AddItemModal';
 import { SettingsModal } from '@/components/SettingsModal';
+import { DeleteModal } from '@/components/DeleteModal';
 import { Item } from '@/lib/db';
-import { Plus, Bookmark, Search, Sparkles, Loader2, Filter } from 'lucide-react';
+import { Plus, Bookmark, Loader2, Filter } from 'lucide-react';
 
 export default function Home() {
   const [items, setItems] = useState<Item[]>([]);
@@ -22,7 +23,17 @@ export default function Home() {
   const [readerItem, setReaderItem] = useState<Item | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Global counts for all library sections
+  const [counts, setCounts] = useState({
+    all: 0,
+    links: 0,
+    notes: 0,
+    favorites: 0,
+    archived: 0,
+  });
 
   // Load items
   const loadItems = useCallback(async () => {
@@ -37,6 +48,9 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         setItems(data.items || []);
+        if (data.counts) {
+          setCounts(data.counts);
+        }
       }
     } catch (err) {
       console.error('Failed to load items:', err);
@@ -95,6 +109,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_favorite: nextVal }),
       });
+      loadItems();
     } catch (err) {
       console.error(err);
       loadItems();
@@ -121,16 +136,28 @@ export default function Home() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Sei sicuro di voler eliminare questo elemento?')) return;
+  const handleDeleteClick = (item: Item) => {
+    setItemToDelete(item);
+  };
 
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
+    const id = itemToDelete.id;
+    setItemToDelete(null);
+
+    // Optimistically remove from list
     setItems((prev) => prev.filter((it) => it.id !== id));
 
     try {
-      await fetch(`/api/items/${id}`, { method: 'DELETE' });
-      loadTags();
+      const res = await fetch(`/api/items/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadItems();
+        loadTags();
+      } else {
+        loadItems();
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Delete error:', err);
       loadItems();
     }
   };
@@ -144,6 +171,7 @@ export default function Home() {
           prev.map((it) => (it.id === id ? data.item : it))
         );
         loadTags();
+        loadItems();
       } else {
         const error = await res.json();
         alert(`Errore AI: ${error.error || 'Verifica la configurazione nelle impostazioni'}`);
@@ -152,27 +180,6 @@ export default function Home() {
       alert(`Errore AI: ${err.message}`);
     }
   };
-
-  // Counts for sidebar
-  const counts = useMemo(() => {
-    let all = 0;
-    let links = 0;
-    let notes = 0;
-    let favorites = 0;
-    let archived = 0;
-
-    for (const item of items) {
-      if (item.is_archived) {
-        archived++;
-      } else {
-        all++;
-        if (item.type === 'link') links++;
-        if (item.type === 'note') notes++;
-        if (item.is_favorite) favorites++;
-      }
-    }
-    return { all, links, notes, favorites, archived };
-  }, [items]);
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -184,7 +191,7 @@ export default function Home() {
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
         viewMode={viewMode}
         onToggleViewMode={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-        totalCount={items.length}
+        totalCount={counts.all}
       />
 
       <div style={{ display: 'flex', flex: 1 }}>
@@ -342,7 +349,7 @@ export default function Home() {
                   viewMode="grid"
                   onToggleFavorite={handleToggleFavorite}
                   onToggleArchive={handleToggleArchive}
-                  onDelete={handleDelete}
+                  onDelete={handleDeleteClick}
                   onOpenReader={(it) => setReaderItem(it)}
                   onTriggerAi={handleTriggerAi}
                   onTagClick={(tag) => setSelectedTag(tag)}
@@ -359,7 +366,7 @@ export default function Home() {
                   viewMode="list"
                   onToggleFavorite={handleToggleFavorite}
                   onToggleArchive={handleToggleArchive}
-                  onDelete={handleDelete}
+                  onDelete={handleDeleteClick}
                   onOpenReader={(it) => setReaderItem(it)}
                   onTriggerAi={handleTriggerAi}
                   onTagClick={(tag) => setSelectedTag(tag)}
@@ -390,6 +397,14 @@ export default function Home() {
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
+      />
+
+      {/* Custom Delete Confirmation Modal */}
+      <DeleteModal
+        isOpen={!!itemToDelete}
+        itemTitle={itemToDelete?.title || ''}
+        onConfirm={confirmDelete}
+        onCancel={() => setItemToDelete(null)}
       />
     </div>
   );

@@ -22,7 +22,7 @@ interface ItemCardProps {
   viewMode: 'grid' | 'list';
   onToggleFavorite: (id: string, current: number) => void;
   onToggleArchive: (id: string, current: number) => void;
-  onDelete: (id: string) => void;
+  onDelete: (item: Item) => void;
   onOpenReader: (item: Item) => void;
   onTriggerAi: (id: string) => Promise<void>;
   onTagClick: (tagName: string) => void;
@@ -152,7 +152,10 @@ export function ItemCard({
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
           {isLink && item.readable_html && (
             <button
-              onClick={() => onOpenReader(item)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenReader(item);
+              }}
               title="Apri Reader Mode"
               className="btn-icon"
               style={{ width: '32px', height: '32px' }}
@@ -172,7 +175,10 @@ export function ItemCard({
           </button>
 
           <button
-            onClick={() => onToggleFavorite(item.id, item.is_favorite)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite(item.id, item.is_favorite);
+            }}
             title={item.is_favorite ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}
             className="btn-icon"
             style={{ width: '32px', height: '32px', color: item.is_favorite ? '#fbbf24' : 'inherit' }}
@@ -185,6 +191,7 @@ export function ItemCard({
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
               className="btn-icon"
               style={{ width: '32px', height: '32px' }}
               title="Apri sito originale"
@@ -194,7 +201,10 @@ export function ItemCard({
           )}
 
           <button
-            onClick={() => onToggleArchive(item.id, item.is_archived)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleArchive(item.id, item.is_archived);
+            }}
             title={item.is_archived ? 'Ripristina da archivio' : 'Archivia'}
             className="btn-icon"
             style={{ width: '32px', height: '32px' }}
@@ -203,7 +213,10 @@ export function ItemCard({
           </button>
 
           <button
-            onClick={() => onDelete(item.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(item);
+            }}
             title="Elimina"
             className="btn-icon"
             style={{ width: '32px', height: '32px', color: '#f43f5e' }}
@@ -507,7 +520,10 @@ export function ItemCard({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
-            onClick={() => onToggleFavorite(item.id, item.is_favorite)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite(item.id, item.is_favorite);
+            }}
             title={item.is_favorite ? 'Rimuovi preferito' : 'Aggiungi a preferiti'}
             className="btn-icon"
             style={{
@@ -520,7 +536,10 @@ export function ItemCard({
           </button>
 
           <button
-            onClick={() => onToggleArchive(item.id, item.is_archived)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleArchive(item.id, item.is_archived);
+            }}
             title={item.is_archived ? 'Ripristina' : 'Archivia'}
             className="btn-icon"
             style={{ width: '30px', height: '30px' }}
@@ -529,7 +548,10 @@ export function ItemCard({
           </button>
 
           <button
-            onClick={() => onDelete(item.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(item);
+            }}
             title="Elimina"
             className="btn-icon"
             style={{ width: '30px', height: '30px', color: '#f43f5e' }}

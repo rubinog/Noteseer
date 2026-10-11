@@ -110,7 +110,32 @@ export async function GET(req: NextRequest) {
       tags: getTagsForItem(db, item.id),
     }));
 
-    return NextResponse.json({ items });
+    const stats = db.prepare(`
+      SELECT 
+        COUNT(CASE WHEN is_archived = 0 THEN 1 END) as all_count,
+        COUNT(CASE WHEN is_archived = 0 AND type = 'link' THEN 1 END) as links_count,
+        COUNT(CASE WHEN is_archived = 0 AND type = 'note' THEN 1 END) as notes_count,
+        COUNT(CASE WHEN is_archived = 0 AND is_favorite = 1 THEN 1 END) as favorites_count,
+        COUNT(CASE WHEN is_archived = 1 THEN 1 END) as archived_count
+      FROM items
+    `).get() as {
+      all_count: number;
+      links_count: number;
+      notes_count: number;
+      favorites_count: number;
+      archived_count: number;
+    };
+
+    return NextResponse.json({
+      items,
+      counts: {
+        all: stats.all_count || 0,
+        links: stats.links_count || 0,
+        notes: stats.notes_count || 0,
+        favorites: stats.favorites_count || 0,
+        archived: stats.archived_count || 0,
+      },
+    });
   } catch (error: any) {
     console.error('Error fetching items:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
