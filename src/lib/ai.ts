@@ -58,8 +58,8 @@ CONTENT EXCERPT: ${(item.content || '').slice(0, 3000)}
 
   const systemPrompt = `You are an AI assistant in Noteseer, a smart bookmark and note keeping app.
 Analyze the provided content and provide:
-1. A concise 2-3 sentence summary (in the language of the source text).
-2. Exactly 3 to 5 relevant lowercase tags (one or two words each, e.g. "programming", "docker", "ai", "hardware").
+1. A concise 2-3 sentence summary written in Italian (always respond in Italian regardless of the source language).
+2. Exactly 3 to 5 relevant lowercase tags (one or two words each, e.g. "programmazione", "docker", "ai", "hardware").
 
 Respond ONLY with valid JSON in this exact structure:
 {
