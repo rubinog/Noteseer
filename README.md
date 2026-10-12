@@ -44,7 +44,7 @@ cd Noteseer
 docker compose up -d --build
 ```
 
-Access the app in your browser at `http://localhost:3000` (or `http://<YOUR-SERVER-IP>:3000`).
+Access the app in your browser at `http://localhost:38187` (or `http://<YOUR-SERVER-IP>:38187`).
 
 ---
 

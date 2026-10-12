@@ -137,7 +137,7 @@ Docker scaricherà l'ambiente Node, compilerà l'applicazione e avvierà il cont
 ```bash
 docker compose ps
 ```
-Dovresti vedere il container `noteseer` con stato `Up` sulla porta `0.0.0.0:3000->3000`.
+Dovresti vedere il container `noteseer` con stato `Up` sulla porta `0.0.0.0:38187->3000`.
 
 ---
 
@@ -145,9 +145,9 @@ Dovresti vedere il container `noteseer` con stato `Up` sulla porta `0.0.0.0:3000
 
 1. Apri il browser dal tuo computer o smartphone (connesso alla stessa rete locale) e digita:
    ```
-   http://<IP-DEL-MULETTO>:3000
+   http://<IP-DEL-MULETTO>:38187
    ```
-   *(Puoi trovare l'indirizzo IP del tuo muletto dando il comando `hostname -I` sul server, ad esempio `http://192.168.1.50:3000`).*
+   *(Puoi trovare l'indirizzo IP del tuo muletto dando il comando `hostname -I` sul server, ad esempio `http://192.168.1.50:38187`).*
 
 2. Clicca sull'icona delle **Impostazioni (⚙️)** in alto a destra.
 

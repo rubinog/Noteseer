@@ -6,7 +6,7 @@ services:
     container_name: noteseer
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${PORT:-38187}:3000"
     volumes:
       # Persistent volume for SQLite database (karakeep.db)
       - ./data:/app/data
