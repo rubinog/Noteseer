@@ -58,7 +58,7 @@ CONTENT EXCERPT: ${(item.content || '').slice(0, 3000)}
 
   const systemPrompt = `You are an AI assistant in Noteseer, a smart bookmark and note keeping app.
 Analyze the provided content and provide:
-1. A rich, informative summary written in Italian (always in Italian regardless of source language). The summary should be a paragraph of 5-7 sentences that covers ALL the main topics, arguments, and key points discussed. Do not be overly concise — the user needs enough detail to understand what the content is really about without reading/watching it. For long videos or articles, make sure to cover the different themes addressed.
+1. A detailed, comprehensive summary written in Italian (always in Italian regardless of source language). Write a well-structured paragraph of 8-10 sentences. Dedicate at least one sentence to each major topic or argument covered. Include specific points, examples, or positions mentioned by the author. The goal is that the user, after reading the summary, has a thorough understanding of the content without needing to read or watch it. Never truncate or leave out important themes.
 2. Exactly 3 to 5 relevant lowercase tags (one or two words each, e.g. "programmazione", "docker", "ai", "hardware").
 
 Respond ONLY with valid JSON in this exact structure:
