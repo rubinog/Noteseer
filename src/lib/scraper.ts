@@ -1,4 +1,4 @@
-﻿import * as cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 
@@ -114,7 +114,7 @@ export async function scrapeUrl(rawUrl: string): Promise<ScrapedData> {
 }
 
 /**
- * Attempts to extract a YouTube video transcript using YouTube internal
+ * Attempts to extract a YouTube video transcript using YouTube's internal
  * timedtext API. No API key required.
  * Returns the transcript as plain text, or null if unavailable.
  */
@@ -126,63 +126,154 @@ async function tryExtractYouTubeTranscript(
     const videoId = extractYouTubeVideoId(pageUrl);
     if (!videoId) return null;
 
-    const captionMatch = html.match(/"captionTracks":(\[.*?\])/s);
-    if (!captionMatch) {
-      console.warn('[YouTube] No captionTracks found in page HTML for', videoId);
-      return null;
+    // Always fetch the canonical watch page directly.
+    // youtu.be redirects may return a lightweight page without captionTracks.
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    let pageHtml = html;
+
+    // Re-fetch only if the original URL was not already a watch page
+    if (!pageUrl.includes('youtube.com/watch')) {
+      try {
+        const watchRes = await fetch(watchUrl, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8',
+          },
+          signal: AbortSignal.timeout(12000),
+        });
+        if (watchRes.ok) pageHtml = await watchRes.text();
+      } catch {
+        // continue with original html
+      }
     }
 
-    let captionTracks: Array<{ baseUrl: string; languageCode: string; kind?: string }> = [];
-    try {
-      captionTracks = JSON.parse(captionMatch[1]);
-    } catch {
-      return null;
+    // Extract captionTracks from the ytInitialPlayerResponse blob.
+    // YouTube embeds it as: "captionTracks":[{...},{...}]
+    // Use a greedy match inside a bounded window to avoid runaway matches.
+    const tracksResult = extractCaptionTracks(pageHtml);
+
+    if (tracksResult && tracksResult.length > 0) {
+      const transcript = await fetchTranscriptFromTracks(tracksResult, videoId);
+      if (transcript) return transcript;
+    } else {
+      console.warn('[YouTube] No captionTracks found for', videoId, '— trying timedtext fallback');
     }
 
-    if (captionTracks.length === 0) return null;
-
-    // Prefer: Italian > original language > auto-generated (asr)
-    const preferred =
-      captionTracks.find((t) => t.languageCode === 'it') ||
-      captionTracks.find((t) => t.kind !== 'asr') ||
-      captionTracks[0];
-
-    const transcriptUrl = preferred.baseUrl;
-    if (!transcriptUrl) return null;
-
-    const res = await fetch(transcriptUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!res.ok) return null;
-
-    const xmlText = await res.text();
-
-    const textParts: string[] = [];
-    const textRegex = /<text[^>]*>([\s\S]*?)<\/text>/g;
-    let match;
-    while ((match = textRegex.exec(xmlText)) !== null) {
-      const decoded = match[1]
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/\n/g, ' ')
-        .trim();
-      if (decoded) textParts.push(decoded);
-    }
-
-    if (textParts.length === 0) return null;
-
-    const transcript = textParts.join(' ').replace(/\s+/g, ' ').trim();
-    console.log(`[YouTube] Transcript extracted for ${videoId}: ${transcript.length} chars`);
-    return transcript.slice(0, 6000);
+    // Fallback: try the timedtext API directly with common languages
+    return await fetchTimedtextFallback(videoId);
   } catch (err) {
     console.warn('[YouTube] Transcript extraction failed:', err);
     return null;
   }
+}
+
+function extractCaptionTracks(
+  html: string
+): Array<{ baseUrl: string; languageCode: string; kind?: string }> | null {
+  // Find "captionTracks" and grab everything up to the matching ]
+  const start = html.indexOf('"captionTracks":[');
+  if (start === -1) return null;
+
+  const arrayStart = html.indexOf('[', start);
+  if (arrayStart === -1) return null;
+
+  // Walk forward to find the matching closing bracket
+  let depth = 0;
+  let i = arrayStart;
+  for (; i < html.length && i < arrayStart + 50000; i++) {
+    if (html[i] === '[') depth++;
+    else if (html[i] === ']') {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+
+  const jsonStr = html.slice(arrayStart, i + 1);
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchTranscriptFromTracks(
+  captionTracks: Array<{ baseUrl: string; languageCode: string; kind?: string }>,
+  videoId: string
+): Promise<string | null> {
+  // Prefer: Italian > non-auto-generated > first available
+  const preferred =
+    captionTracks.find((t) => t.languageCode === 'it') ||
+    captionTracks.find((t) => t.kind !== 'asr') ||
+    captionTracks[0];
+
+  const transcriptUrl = preferred?.baseUrl;
+  if (!transcriptUrl) return null;
+
+  const res = await fetch(transcriptUrl, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!res.ok) return null;
+
+  const xmlText = await res.text();
+  return parseTranscriptXml(xmlText, videoId);
+}
+
+async function fetchTimedtextFallback(videoId: string): Promise<string | null> {
+  const langs = ['it', 'en', 'en-US'];
+  for (const lang of langs) {
+    try {
+      const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}&fmt=json3`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json() as { events?: Array<{ segs?: Array<{ utf8: string }> }> };
+      if (!data.events?.length) continue;
+
+      const text = data.events
+        .flatMap((e) => e.segs || [])
+        .map((s) => s.utf8?.replace(/\n/g, ' ').trim())
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (text.length > 50) {
+        console.log(`[YouTube] Timedtext fallback (${lang}) for ${videoId}: ${text.length} chars`);
+        return text.slice(0, 6000);
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function parseTranscriptXml(xmlText: string, videoId: string): string | null {
+  const textParts: string[] = [];
+  const textRegex = /<text[^>]*>([\s\S]*?)<\/text>/g;
+  let match;
+  while ((match = textRegex.exec(xmlText)) !== null) {
+    const decoded = match[1]
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\n/g, ' ')
+      .trim();
+    if (decoded) textParts.push(decoded);
+  }
+
+  if (textParts.length === 0) return null;
+
+  const transcript = textParts.join(' ').replace(/\s+/g, ' ').trim();
+  console.log(`[YouTube] Transcript extracted for ${videoId}: ${transcript.length} chars`);
+  return transcript.slice(0, 6000);
 }
 
 /**
