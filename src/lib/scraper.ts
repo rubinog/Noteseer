@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
+import { YoutubeTranscript } from 'youtube-transcript';
 
 export interface ScrapedData {
   title: string;
@@ -114,58 +115,67 @@ export async function scrapeUrl(rawUrl: string): Promise<ScrapedData> {
 }
 
 /**
- * Attempts to extract a YouTube video transcript using YouTube's internal
- * timedtext API. No API key required.
- * Returns the transcript as plain text, or null if unavailable.
+ * Attempts to extract a YouTube video transcript.
+ * Uses the youtube-transcript package as primary method,
+ * falls back to manual captionTracks parsing + timedtext API.
+ * No API key required.
  */
 async function tryExtractYouTubeTranscript(
   html: string,
   pageUrl: string
 ): Promise<string | null> {
+  const videoId = extractYouTubeVideoId(pageUrl);
+  if (!videoId) return null;
+
+  // --- Method 1: youtube-transcript package (most reliable) ---
   try {
-    const videoId = extractYouTubeVideoId(pageUrl);
-    if (!videoId) return null;
+    const segments = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'it' })
+      .catch(() => YoutubeTranscript.fetchTranscript(videoId)); // fallback to any language
 
-    // Always fetch the canonical watch page directly.
-    // youtu.be redirects may return a lightweight page without captionTracks.
-    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    let pageHtml = html;
+    if (segments && segments.length > 0) {
+      const text = segments
+        .map((s) => s.text.replace(/\n/g, ' ').trim())
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 
-    // Re-fetch only if the original URL was not already a watch page
-    if (!pageUrl.includes('youtube.com/watch')) {
-      try {
-        const watchRes = await fetch(watchUrl, {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8',
-          },
-          signal: AbortSignal.timeout(12000),
-        });
-        if (watchRes.ok) pageHtml = await watchRes.text();
-      } catch {
-        // continue with original html
+      if (text.length > 50) {
+        console.log(`[YouTube] Package transcript for ${videoId}: ${text.length} chars`);
+        return text.slice(0, 6000);
       }
     }
+  } catch (err) {
+    console.warn('[YouTube] youtube-transcript package failed:', err);
+  }
 
-    // Extract captionTracks from the ytInitialPlayerResponse blob.
-    // YouTube embeds it as: "captionTracks":[{...},{...}]
-    // Use a greedy match inside a bounded window to avoid runaway matches.
+  // --- Method 2: Manual captionTracks from page HTML ---
+  try {
+    let pageHtml = html;
+    if (!pageUrl.includes('youtube.com/watch')) {
+      const watchRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8',
+          Cookie: 'CONSENT=YES+cb; SOCS=CAESEwgDEgk0NTk1MzE0MjIaAmVuIAEaBgiAo_CmBg',
+        },
+        signal: AbortSignal.timeout(12000),
+      }).catch(() => null);
+      if (watchRes?.ok) pageHtml = await watchRes.text();
+    }
+
     const tracksResult = extractCaptionTracks(pageHtml);
-
     if (tracksResult && tracksResult.length > 0) {
       const transcript = await fetchTranscriptFromTracks(tracksResult, videoId);
       if (transcript) return transcript;
-    } else {
-      console.warn('[YouTube] No captionTracks found for', videoId, '— trying timedtext fallback');
     }
-
-    // Fallback: try the timedtext API directly with common languages
-    return await fetchTimedtextFallback(videoId);
   } catch (err) {
-    console.warn('[YouTube] Transcript extraction failed:', err);
-    return null;
+    console.warn('[YouTube] captionTracks parsing failed:', err);
   }
+
+  // --- Method 3: Direct timedtext API ---
+  return await fetchTimedtextFallback(videoId);
 }
 
 function extractCaptionTracks(
